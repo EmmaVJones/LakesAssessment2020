@@ -112,18 +112,24 @@ chlAPlotlySingleStation <- function(input,output,session, AUdata, stationSelecte
   
   output$chlAplotly <- renderPlotly({
     req(input$chlA_oneStationSelection, chlA_oneStation())
-    dat <- chlA_oneStation()
+    dat <- chlA_oneStation() %>%
+      mutate(LakeStratification = replace_na(LakeStratification,"NONE"))
     dat$SampleDate <- as.POSIXct(dat$FDT_DATE_TIME2, format="%m/%d/%y")
+    dat$LakeStratification <- as.factor(dat$LakeStratification)
+    dat$LakeStratification <- factor(dat$LakeStratification,levels=c("Epilimnion","NONE","Hypolimnion"))#,ordered=T)
+    
     
     plot_ly(data=dat)%>%
       add_lines(data=dat, x=~SampleDate,y=~Chlorophyll_A_limit, mode='line',line = list(color = 'black'),
                 hoverinfo = "text",text=paste("Chlorophyll a limit:",unique(dat$Chlorophyll_A_limit),'ug/L'), 
                 name="Chlorophyll a limit") %>%
-      add_markers(x= ~SampleDate, y= ~CHLOROPHYLL,mode = 'scatter', name="Chlorophyll a (ug/L)",marker = list(color= '#535559'),
+      add_markers(x= ~SampleDate, y= ~CHLOROPHYLL,mode = 'scatter', name="Chlorophyll a (ug/L)",
+                  color=~LakeStratification, #marker = list(color= '#535559'),
                   hoverinfo="text",text=~paste(sep="<br>",
                                                paste("Date: ",SampleDate),
                                                paste("Depth: ",FDT_DEPTH, "m"),
-                                               paste("Chlorophyll a: ",CHLOROPHYLL,"ug/L")))%>%
+                                               paste("Chlorophyll a: ",CHLOROPHYLL,"ug/L"),
+                                               paste("LakeStratification: ",LakeStratification)))%>%
       layout(showlegend=FALSE,
              yaxis=list(title="Chlorophyll a (ug/L)"),
              xaxis=list(title="Sample Date",tickfont = list(size = 10))) })
