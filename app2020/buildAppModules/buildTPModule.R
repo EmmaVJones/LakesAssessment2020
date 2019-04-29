@@ -115,19 +115,24 @@ TPPlotlySingleStation <- function(input,output,session, AUdata, stationSelectedA
   
   output$TPplotly <- renderPlotly({
     req(input$TP_oneStationSelection, TP_oneStation())
-    dat <- mutate(TP_oneStation(),TPhosphorus_limit_ug_L=TPhosphorus_limit/1000)
-
+    dat <- mutate(TP_oneStation(),TPhosphorus_limit_ug_L=TPhosphorus_limit/1000,
+                  LakeStratification = replace_na(LakeStratification,"NONE"))
     dat$SampleDate <- as.POSIXct(dat$FDT_DATE_TIME2, format="%m/%d/%y")
+    dat$LakeStratification <- as.factor(dat$LakeStratification)
+    dat$LakeStratification <- factor(dat$LakeStratification,levels=c("Epilimnion","NONE","Hypolimnion"))#,ordered=T)
+    
     
     plot_ly(data=dat)%>%
       add_lines(data=dat, x=~SampleDate,y=~TPhosphorus_limit_ug_L, mode='line',line = list(color = 'black'),
                 hoverinfo = "text",text=paste("Total Phosphorus limit:",unique(dat$TPhosphorus_limit_ug_L),'ug/L'), 
                 name="Total Phosphorus limit") %>%
-      add_markers(x= ~SampleDate, y= ~PHOSPHORUS,mode = 'scatter', name="Total Phosphorus (mg/L)",marker = list(color= '#535559'),
+      add_markers(x= ~SampleDate, y= ~PHOSPHORUS,mode = 'scatter', name="Total Phosphorus (mg/L)",
+                  color=~LakeStratification, #marker = list(color= '#535559'),
                   hoverinfo="text",text=~paste(sep="<br>",
                                                paste("Date: ",SampleDate),
                                                paste("Depth: ",FDT_DEPTH, "m"),
-                                               paste("Total Phosphorus: ",PHOSPHORUS,"ug/L")))%>%
+                                               paste("Total Phosphorus: ",PHOSPHORUS,"ug/L"),
+                                               paste("LakeStratification: ",LakeStratification)))%>%
       layout(showlegend=FALSE,
              yaxis=list(title="Total Phosphorus (ug/L)"),
              xaxis=list(title="Sample Date",tickfont = list(size = 10))) })
