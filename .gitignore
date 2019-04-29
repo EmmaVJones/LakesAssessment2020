@@ -34,3 +34,22 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+
+
+app2020/GIS/
+app2020/data/
+app2020/processedStationData/
+app2018/data/conventionals08152018EVJ.csv
+CONVENTIONALS_20171010_updated.csv
+data/
+.Rproj.user
+Paula_tbl_ir_mon_stations_BRRO_2018_JRH_v1 (2).xlsx
+PaulaCMONLake.xlsx
+app2020/Lake_portableApp_v1/
+app2020/Lake_portableApp_v1.zip
+app2020/Lake_portableApp_SWRO/
+app2020/Lake_portableApp_SWRO.zip
+app2020/Lake_portableApp_Statewide/
+app2020/Lake_portableApp_Statewide.zip
+*.csv
+*.zip

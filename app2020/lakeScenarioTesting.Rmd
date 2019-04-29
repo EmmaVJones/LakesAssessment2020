@@ -1,0 +1,446 @@
+---
+title: "Lake Scenario Testing"
+author: "Emma Jones"
+date: "April 12, 2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(readxl)
+library(FSA)
+library(lubridate)
+library(magrittr)
+library(DT)
+
+# Bring in Assessment functions from app
+source('global.R')
+
+# Basic mapview options, set only once
+
+mapviewOptions(basemaps = c( "OpenStreetMap",'Esri.WorldImagery'),
+               vector.palette = colorRampPalette(brewer.pal(3, "Set1")),
+               na.color = "magenta",
+               legend=FALSE)
+
+
+stationTableResults <- readRDS('stationTableResults.RDS') 
+
+lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_BRRO.csv')
+
+```
+
+Below is the stations table output for BRRO. Since all AUs need to be split, the sample counts and violation % are essentially the AU results. 
+
+The different ways of calculating DO and pH are identified in separate columns with their outcomes.
+
+```{r stationTable for users, echo=F, message=FALSE, warning=FALSE}
+DT::datatable(stationTableResults, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(stationTableResults), scrollY = "400px", dom='Btf'))
+
+```
+
+
+## New impairments to consider
+
+
+### Method 1: single stations are AUs with existing guidance ( epilimnion and non stratified days count)
+
+This method means that each station we collect is now it's own AU. This warrants assessment of which stations have parameter issues that were previously undetected because the total n of AU denominator were mitigating violation counts.
+
+```{r newly impaired AUs, echo=F, message=FALSE, warning=FALSE}
+# Temp
+Tempissues <- filter(stationTableResults, TEMP_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissues <- filter(stationTableResults, DO_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissues <- filter(stationTableResults, PH_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+
+
+# unique AUs with problems of any sort
+uniqueProblems <- bind_rows(Tempissues,DOissues, pHissues) %>%
+  distinct(ID305B_1)
+```
+
+The new method renders:
+
+* `r nrow(Tempissues)` AUs with a temperature problem
+* `r nrow(DOissues)` AUs with a DO problem
+* `r nrow(pHissues)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r AU/station problem map, echo=F, message=FALSE, warning=FALSE}
+Tempissues_sf <- Tempissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissues_sf <- DOissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissues_sf <- pHissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf, bacteriaissues_sf, chlAissues_sf, TPissues_sf)
+
+mapview(Tempissues_sf, label = Tempissues_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(Tempissues_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissues_sf, label = DOissues_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissues_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissues_sf, label = pHissues_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissues_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+
+
+
+### Method 2: single stations are AUs with median of each sample day considered a single sample (epi and nonstratified counted)
+
+Take median of each sample day, compare to standard, flag if violating and calculate violations / samples
+
+```{r method 2, echo=F, message=FALSE, warning=FALSE}
+# Temp
+TempissuesMEDIAN <- filter(stationTableResults, TEMP_MEDIAN_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissuesMEDIAN <- filter(stationTableResults, DO_MEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissuesMEDIAN <- filter(stationTableResults, PH_MEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+```
+
+The new method renders:
+
+* `r nrow(TempissuesMEDIAN)` AUs with a temperature problem
+* `r nrow(DOissuesMEDIAN)` AUs with a DO problem
+* `r nrow(pHissuesMEDIAN)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r method 2 map, echo=F, message=FALSE, warning=FALSE}
+TempissuesMEDIAN_sf <- TempissuesMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissuesMEDIAN_sf <- DOissuesMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissuesMEDIAN_sf <- pHissuesMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf)
+
+mapview(TempissuesMEDIAN_sf, label = TempissuesMEDIAN_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(TempissuesMEDIAN_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissuesMEDIAN_sf, label = DOissuesMEDIAN_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissuesMEDIAN_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissuesMEDIAN_sf, label = pHissuesMEDIAN_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissuesMEDIAN_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+### Method 3: single stations are AUs with epilimnion only count considered a single sample
+
+Take all epilimnion samples, compare to standard, flag if violating and calculate violations / samples
+
+```{r method3, echo=F, message=FALSE, warning=FALSE}
+# Temp
+TempissuesEpiOnly <- filter(stationTableResults, TEMP_EpiONLY_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissuesEpiOnly <- filter(stationTableResults, DO_EpiONLY_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissuesEpiOnly <- filter(stationTableResults, PH_EpiONLY_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+```
+
+The new method renders:
+
+* `r nrow(TempissuesEpiOnly)` AUs with a temperature problem
+* `r nrow(DOissuesEpiOnly)` AUs with a DO problem
+* `r nrow(pHissuesEpiOnly)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r method 3 map, echo=F, message=FALSE, warning=FALSE}
+TempissuesEpiOnly_sf <- TempissuesEpiOnly %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissuesEpiOnly_sf <- DOissuesEpiOnly %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissuesEpiOnly_sf <- pHissuesEpiOnly %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf)
+
+mapview(TempissuesEpiOnly_sf, label = TempissuesEpiOnly_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(TempissuesEpiOnly_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissuesEpiOnly_sf, label = DOissuesEpiOnly_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissuesEpiOnly_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissuesEpiOnly_sf, label = pHissuesEpiOnly_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissuesEpiOnly_sf, zcol=c("SIGLAKENAME","ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+### Method 4: single stations are AUs with median of all epilimnion samples of single sample day considered a single sample
+
+Take all epilimnion samples, take median of all epilimnion samples, compare to standard, flag if violating and calculate violations / samples
+
+```{r method 4, echo=F, message=FALSE, warning=FALSE}
+# Temp
+TempissuesEpiMEDIAN <- filter(stationTableResults, TEMP_EpiMEDIAN_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissuesEpiMEDIAN <- filter(stationTableResults, DO_EpiMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissuesEpiMEDIAN <- filter(stationTableResults, PH_EpiMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+```
+
+The new method renders:
+
+* `r nrow(TempissuesEpiMEDIAN)` AUs with a temperature problem
+* `r nrow(DOissuesEpiMEDIAN)` AUs with a DO problem
+* `r nrow(pHissuesEpiMEDIAN)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r method4 map, echo=F, message=FALSE, warning=FALSE}
+TempissuesEpiMEDIAN_sf <- TempissuesEpiMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissuesEpiMEDIAN_sf <- DOissuesEpiMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissuesEpiMEDIAN_sf <- pHissuesEpiMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf)
+
+mapview(TempissuesEpiMEDIAN_sf, label = TempissuesEpiMEDIAN_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(TempissuesEpiMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissuesEpiMEDIAN_sf, label = DOissuesEpiMEDIAN_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissuesEpiMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissuesEpiMEDIAN_sf, label = pHissuesEpiMEDIAN_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissuesEpiMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+### Method 5: (Median of AU) Using Existing AUs, take median of each day then median of all stations in AU 
+
+Using the existing AU determinations (that we think will probably change), ONLY use information from ID305B_1 column to group stations, thus avoiding guest appearances of some stations in multiple AUs and double counting of data. Use each station's unique thermocline each day to establish whether or not it is stratified that day. If it is stratified, take all the DO/pH data from the epilimnion on that day for that station. If it is unstratified, take all the DO/pH samples on that day for that station. THEN, using all the appropriate data from the AU on that sample day, calculate a median of your parameter and compare it to the standard.
+
+
+
+```{r method 5, echo=F, message=FALSE, warning=FALSE}
+# Temp
+TempissuesAUdailyMEDIAN <- filter(stationTableResults, TEMP_AUdailyMEDIAN_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissuesAUdailyMEDIAN <- filter(stationTableResults, DO_AUdailyMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissuesAUdailyMEDIAN <- filter(stationTableResults, PH_AUdailyMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+```
+
+The new method renders:
+
+* `r nrow(TempissuesAUdailyMEDIAN)` AUs with a temperature problem
+* `r nrow(DOissuesAUdailyMEDIAN)` AUs with a DO problem
+* `r nrow(pHissuesAUdailyMEDIAN)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r method5 map, echo=F, message=FALSE, warning=FALSE}
+TempissuesAUdailyMEDIAN_sf <- TempissuesAUdailyMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissuesAUdailyMEDIAN_sf <- DOissuesAUdailyMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissuesAUdailyMEDIAN_sf <- pHissuesAUdailyMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf)
+
+mapview(TempissuesAUdailyMEDIAN_sf, label = TempissuesAUdailyMEDIAN_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(TempissuesAUdailyMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissuesAUdailyMEDIAN_sf, label = DOissuesAUdailyMEDIAN_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissuesAUdailyMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissuesAUdailyMEDIAN_sf, label = pHissuesAUdailyMEDIAN_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissuesAUdailyMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+
+
+
+
+### Method 6: (Median of medians of AU) Using Existing AUs, take median of each day then median of all stations in AU 
+
+Using the existing AU determinations (that we think will probably change), ONLY use information from ID305B_1 column to group stations, thus avoiding guest appearances of some stations in multiple AUs and double counting of data. Use each station's unique thermocline each day to establish whether or not it is stratified that day. If it is stratified, calculate the median of the epilimnion on that day for that station. If it is unstratified, calculate the median of all samples on that day for that station. THEN, take each station's median for each sample day and calculate a median of the medians. 
+
+
+
+```{r method 6, echo=F, message=FALSE, warning=FALSE}
+# Temp
+TempissuesAUdailyMEDIANMEDIAN <- filter(stationTableResults, TEMP_AUdailyMEDIANMEDIAN_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissuesAUdailyMEDIANMEDIAN <- filter(stationTableResults, DO_AUdailyMEDIANMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissuesAUdailyMEDIANMEDIAN <- filter(stationTableResults, PH_AUdailyMEDIANMEDIAN_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+```
+
+The new method renders:
+
+* `r nrow(TempissuesAUdailyMEDIANMEDIAN)` AUs with a temperature problem
+* `r nrow(DOissuesAUdailyMEDIANMEDIAN)` AUs with a DO problem
+* `r nrow(pHissuesAUdailyMEDIANMEDIAN)` AUs with a pH problem
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r method6 map, echo=F, message=FALSE, warning=FALSE}
+TempissuesAUdailyMEDIANMEDIAN_sf <- TempissuesAUdailyMEDIANMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissuesAUdailyMEDIANMEDIAN_sf <- DOissuesAUdailyMEDIANMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissuesAUdailyMEDIANMEDIAN_sf <- pHissuesAUdailyMEDIANMEDIAN %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude,SIGLAKENAME), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+#allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf)
+
+mapview(TempissuesAUdailyMEDIANMEDIAN_sf, label = TempissuesAUdailyMEDIANMEDIAN_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(TempissuesAUdailyMEDIANMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissuesAUdailyMEDIANMEDIAN_sf, label = DOissuesAUdailyMEDIANMEDIAN_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissuesAUdailyMEDIANMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissuesAUdailyMEDIANMEDIAN_sf, label = pHissuesAUdailyMEDIANMEDIAN_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissuesAUdailyMEDIANMEDIAN_sf, zcol=c('SIGLAKENAME',"ID305B_1","STATION_ID","REGION"))) 
+  
+
+
+```
+
+
+
+
+

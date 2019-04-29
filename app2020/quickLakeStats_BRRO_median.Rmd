@@ -1,0 +1,647 @@
+---
+title: "Quick Lake stats BRRO"
+author: "Emma Jones"
+date: "April 12, 2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(readxl)
+library(FSA)
+library(lubridate)
+library(magrittr)
+library(DT)
+
+# Bring in Assessment functions from app
+source('global.R')
+
+# Basic mapview options, set only once
+
+mapviewOptions(basemaps = c( "OpenStreetMap",'Esri.WorldImagery'),
+               vector.palette = colorRampPalette(brewer.pal(3, "Set1")),
+               na.color = "magenta",
+               legend=FALSE)
+
+```
+
+This document walks users through the analysis of new lake median guidance. After analyzing the lake AU's per region, we dive into an analysis of Smith Mountain Lake in Blue Ridge Region to identify where/if the changes to the guidance will provide different results in comparison to previous assessment cycles/guidance.
+
+# Data in
+The analysis incorporates all conventionals data organized by Roger for the window. All AUs are determined by the 2018 draft reservoirs Assessment Unit geospatial file and regional assessors.
+
+```{r datasources, echo=FALSE, message=FALSE, warning=FALSE}
+# Regional AU layer from last cycle
+lakeAU <- suppressMessages(st_read('GIS/draft2018IR_AUs/va_2018_aus_reservoir.shp'))
+
+
+# Roger's conventionals data pull
+conventionals <- read_csv('data/final2020data/CEDSWQM_2020_IR_DATA-CONVENTIONALS_20190305.csv') %>%
+  filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
+  rename("FDT_TEMP_CELCIUS"  ="TEMPERATURE_00010_DEGREES CENTIGRADE",
+         "FDT_TEMP_CELCIUS_RMK" = "FDT_TEMP_CELCIUS_RMK",  
+         "FDT_FIELD_PH" = "pH_00400_STD_UNITS" ,          
+         "FDT_FIELD_PH_RMK"  ="FDT_FIELD_PH_RMK", 
+         "DO" =  "DO_mg/L",       
+         "DO_RMK"  ="DO_RMK",    
+         "FDT_SPECIFIC_CONDUCTANCE"="SPECIFIC_CONDUCTANCE_00095_UMHOS/CM @ 25C",    
+         "FDT_SPECIFIC_CONDUCTANCE_RMK" ="FDT_SPECIFIC_CONDUCTANCE_RMK" ,
+         "FDT_SALINITY" = "SALINITY_00480_PPT" ,            
+         "FDT_SALINITY_RMK"  ="FDT_SALINITY_RMK",  
+         "NITROGEN" = "NITROGEN_mg/L" ,                    
+         "AMMONIA" ="AMMONIA_mg/L",
+         "PHOSPHORUS" =  "PHOSPHORUS_mg/L",
+         "FECAL_COLI" = "FECAL_COLIFORM_31616_NO/100mL" ,
+         "E.COLI" = "ECOLI_CFU/100mL",                       
+         "ENTEROCOCCI" =  "ENTEROCOCCI_31649_NO/100mL",
+         "CHLOROPHYLL" ="CHLOROPHYLL_32211_ug/L",                
+         "SSC" ="SSC-TOTAL_00530_mg/L" , 
+         "NITRATE" ="NITRATE_mg/L", 
+         "CHLORIDE" ="CHLORIDE_mg/L",
+         "SULFATE_TOTAL" ="SULFATE_TOTAL_00945_mg/L",              
+         "SULFATE_DISS" ="SULFATE_DISSOLVED_00946_mg/L")
+conventionals$FDT_DATE_TIME2 <- as.POSIXct(conventionals$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+
+
+#lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_SWRO.csv')
+lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_BRRO.csv')
+
+
+monStationTemplate <- read_csv('data/newMonStationTemplate.csv') # from X:\2018_Assessment\StationsDatabase\VRO but added new bacteria columns
+
+
+```
+
+
+# Data manipulation
+
+Now that we have all the data we need to run the assessment, we need to reorganize it to run smoothly through the app assessment functions. This includes joining all relevant water quality standards. The script is now joining Roger's conventionals to BRRo's stations table (that contains AU and WQS information).
+
+```{r data manipulation, echo=F, message=FALSE, warning=FALSE}
+
+conventionals_Lake <- left_join(conventionals,
+                                dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                                              STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                                              SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID') %>%
+    left_join(WQSvalues, by = 'CLASS') 
+
+
+```
+
+
+# Statewide Numbers
+
+Now time to work with the data.
+
+### How many lakes with multiple AU's?
+
+```{r AU per lake, echo=F}
+statewide <- lakeAU %>%
+  group_by(WATER_NAME) %>%
+  summarise(n = n()) %>%
+  filter(n >1) %>%
+  arrange(desc(n))  # don't need spatial aspect for this analysis
+mapview(statewide, label = statewide$WATER_NAME)
+```
+
+By far BRRO has most lakes with more than 1 AU per lake but Northern isn't too far behind. They may be affected by the change, but not to the level of BRRO.
+
+
+
+### In BRRO lakes with more than one AU, how many sites per AU?
+
+Note you can explore the table interactively.
+
+```{r BRRO sites per AU, echo=F}
+z <- lakeStations %>% 
+  group_by(SIGLAKENAME) %>% 
+  mutate(n_StationsInLake=n()) %>% 
+  ungroup %>% 
+  filter(n_StationsInLake > 1) %>% 
+  group_by(ID305B_1) %>% 
+  mutate(n_StationsInAU = n()) %>%
+  filter(n_StationsInAU > 1) %>%
+  arrange(desc(n_StationsInAU)) %>% 
+  ungroup() %>%
+  dplyr::select( SIGLAKENAME, n_StationsInLake, n_StationsInAU, FDT_STA_ID, ID305B_1, ID305B_2, ID305B_3, Assess_TYPE, 
+          STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, COMMENTS)
+
+DT::datatable(z, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(z), scrollY = "400px", dom='Btf'))
+```
+
+So quick talking point: Kerr has an AU with 7 DEQ sites in it??? That will need to be split up for sure. Smith Mountain has the most DEQ stations at 17
+
+## Smith Mountain Lake 
+
+Smith Mountain Lake is where we should focus out attention for this quick analysis bc it has 17 DEQ sites. 
+
+```{r SML , echo=F}
+lake_filter <- filter(lakeStations, SIGLAKENAME == "Smith Mountain Lake") %>%
+  dplyr::select(ID305B_1,ID305B_2,ID305B_3, everything())
+  
+  
+conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$FDT_STA_ID)) %>%
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                            STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                            SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID')
+```
+
+
+Let's focus first on just one AU, VAW-L07L_ROA03A10.Now we are finding the daily thermocline depths of the two stations listed below.
+
+```{r VAW-L07L_ROA03A10, echo=F}
+AUData <- filter(conventionals_Lake, ID305B_1 %in% 'VAW-L07L_ROA03A10')  %>% 
+  left_join(WQSvalues, by = 'CLASS') 
+
+# Create Data frame with all data within ID305B and stratification information
+# Pool thermocline data to get 1 sample per day, not 2 with top/bottom time difference
+AUData$FDT_DATE_TIME <- as.POSIXct(AUData$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+AUData <- mutate(AUData, SampleDate=format(FDT_DATE_TIME,"%m/%d/%y"))%>% # Separate sampling events by day
+  filter(!is.na(FDT_TEMP_CELCIUS))# remove any NA values to keep thermocline function happy
+thermo <- stratifiedLake(AUData)
+thermo$ThermoclineDepth <- as.numeric(thermo$ThermoclineDepth)
+stationDataDailySample <- plyr::join(AUData,thermo,by=c('FDT_STA_ID','SampleDate')) %>%
+  mutate(LakeStratification= ifelse(FDT_DEPTH < ThermoclineDepth,"Epilimnion","Hypolimnion"))
+       
+unique(stationDataDailySample$FDT_STA_ID)
+```
+
+
+Now to the real part. How many times are the thermocline different on a given sample day?
+
+```{r, echo=F}
+sml <- dplyr::select(stationDataDailySample, FDT_STA_ID, SampleDate, ThermoclineDepth, LakeStratification) %>%
+    group_by(FDT_STA_ID, SampleDate) %>%
+    filter(LakeStratification %in% c("Epilimnion",NA)) %>%
+    #mutate(n=n())
+    summarize(n= n()) %>%
+    arrange(SampleDate)
+DT::datatable(sml, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(sml), scrollY = "400px", dom='Btf'))
+
+```
+
+
+Compare all days (wide). This table demonstrates the thermocline depth at each station by day.
+
+```{r, echo=F}
+
+spread1 <- spread(sml, SampleDate, n)
+
+DT::datatable(spread1, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(spread1),  dom='Btf'))
+
+```
+
+
+#### When are the thermocline depths identical?
+
+```{r, echo=F}
+diffThermo <- sml %>%
+       group_by(SampleDate)%>%
+       summarize(diffInThermoclineDepth= diff(n))
+
+DT::datatable(diffThermo, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(diffThermo), scrollY = "400px", dom='Btf'))
+
+```
+
+#### Percent of days that thermocline is identical?
+`r paste(format(((nrow(filter(diffThermo, diffInThermoclineDepth == 0)) / nrow(diffThermo)) * 100), digits=4),'%', sep='')`
+
+#### Percent of days when thermocline different where thermocline depth difference > 1 meters
+
+```{r, echo=F}
+sigDiff <- filter(diffThermo, abs(diffInThermoclineDepth) > 1)
+```
+
+`r format((nrow(sigDiff) / nrow(filter(diffThermo, diffInThermoclineDepth != 0)) * 100), digits=4) `%
+
+
+
+So of the `r nrow(filter(diffThermo, diffInThermoclineDepth != 0))` days that the thermocline isn't the same, `r paste(format((nrow(sigDiff) / nrow(filter(diffThermo, diffInThermoclineDepth != 0)) * 100), digits=4),'%', sep='') ` of the time the thermocline difference is over 1 meters in depth.
+
+
+That would mean the AU needs to be split.
+
+
+## How many AUs would need to be split in BRRO?
+
+So if > 1 station in an AU we need to first test if the stations have identical thermocline depths on the same sample days. Differences in thermocline depths over 1 meter on any given sample day within the 6 year window will be considered enough to establish stations to be nonidentical and thus require an AU to be split.
+
+```{r n AUs to split, echo=F, message=FALSE, warning=FALSE}
+
+stationTableResults <- monStationTemplate %>%
+  mutate_all(as.character) %>%
+  mutate(Split=NA) %>% 
+  dplyr::select(Split, everything())
+
+# time it:
+startTime <- Sys.time()
+
+# loop over all sites, not super efficient but get the job done for now
+for(i in 1:length(unique(lakeStations$SIGLAKENAME))){
+  print(paste('Assessing lake', i, 'of', length(unique(lakeStations$SIGLAKENAME)), sep=' '))
+
+  # pull one lake data
+  lake_filter <- filter(lakeStations, SIGLAKENAME == unique(lakeStations$SIGLAKENAME)[i])
+  
+  
+  conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$FDT_STA_ID)) %>%
+    left_join(dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                            STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                            SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID')
+
+  
+  
+  # One AU at a time
+  for(k in 1:length(unique(conventionals_Lake$ID305B))) {
+    
+    print(paste('Assessing AU',k, 'of', length(unique(conventionals_Lake$ID305B)), sep=' '))
+    
+    AUData <- filter(conventionals_Lake, ID305B_1 %in% unique(conventionals_Lake$ID305B)[k])  %>% 
+      left_join(WQSvalues, by = 'CLASS') 
+    
+    # Create Data frame with all data within ID305B and stratification information
+    # Pool thermocline data to get 1 sample per day, not 2 with top/bottom time difference
+    AUData$FDT_DATE_TIME <- as.POSIXct(AUData$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+    AUData <- mutate(AUData, SampleDate=format(FDT_DATE_TIME,"%m/%d/%y"))%>% # Separate sampling events by day
+      filter(!is.na(FDT_TEMP_CELCIUS))# remove any NA values to keep thermocline function happy
+    thermo <- stratifiedLake(AUData)
+    thermo$ThermoclineDepth <- as.numeric(thermo$ThermoclineDepth)
+    stationDataDailySample <- plyr::join(AUData,thermo,by=c('FDT_STA_ID','SampleDate')) %>%
+      mutate(LakeStratification= ifelse(FDT_DEPTH < ThermoclineDepth,"Epilimnion","Hypolimnion"))
+    
+    for(j in 1:length(unique(stationDataDailySample$FDT_STA_ID))){
+      if(length(unique(stationDataDailySample$FDT_STA_ID)) > 1 ){
+        thermoAnalysisByAU <- dplyr::select(stationDataDailySample, FDT_STA_ID, SampleDate, ThermoclineDepth, LakeStratification) %>%
+          group_by(FDT_STA_ID, SampleDate) %>%
+          filter(LakeStratification %in% c("Epilimnion",NA)) %>%
+          summarize(n= n()) %>%
+          arrange(SampleDate)
+        
+        thermoQuickCheckValid <- thermoAnalysisByAU %>%
+           group_by(FDT_STA_ID)%>% 
+           summarize(nSamples= n())
+      
+        # Bail out if n sample days differ
+        if(any(diff(thermoQuickCheckValid$nSamples) != 0)){
+          stationData <-  filter(stationDataDailySample, FDT_STA_ID %in% unique(stationDataDailySample$FDT_STA_ID)[j])
+          
+          StationTableResults1 <- StationTableStartingData(stationData)%>%
+            mutate(Split= 'Yes',
+                   `Percent of days abs(thermoDiff) > 1` = 'number of sample days not identical in AU') %>%
+            dplyr::select(Split, everything())
+        } else {
+          diffThermo <- thermoAnalysisByAU %>%
+            group_by(SampleDate)%>%
+            summarize(diffInThermoclineDepth= diff(n)) %>%
+            filter(abs(diffInThermoclineDepth) > 1)
+          
+          stationData <-  filter(stationDataDailySample, FDT_STA_ID %in% unique(stationDataDailySample$FDT_STA_ID)[j])
+          
+          StationTableResults1 <- StationTableStartingData(stationData) %>%
+            mutate(Split= ifelse(nrow(diffThermo) > 0, 'Yes','No'),
+                   `Percent of days abs(thermoDiff) > 1` = paste(format(nrow(diffThermo)/nrow(thermoAnalysisByAU)*100,digits=3),'%')) %>%
+            dplyr::select(Split, everything())
+        }
+          
+      
+      } else{
+        stationData <-  filter(stationDataDailySample, FDT_STA_ID %in% unique(stationDataDailySample$FDT_STA_ID)[j])
+        
+        StationTableResults1 <- StationTableStartingData(stationData)%>%
+                                     mutate(Split= 'No',
+                                            `Percent of days abs(thermoDiff) > 1` = 'No other station in AU to compare against') %>%
+                                     dplyr::select(Split, everything())
+      }
+      
+      StationTableResults <- cbind(StationTableResults1,
+                                   tempExceedances(stationData),
+                                   DOExceedances_Min(stationData),pHExceedances(stationData),
+                                   bacteriaExceedances_OLD(bacteria_Assessment_OLD(stationData, 'E.COLI', 126, 235),'E.COLI') %>% 
+                                     dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP',
+                                                   'ECOLI_STAT_OLD'='E.COLI_STAT'),
+                                   bacteriaExceedances_NEW(stationData,'E.COLI', 10, 410, 126),
+                                   # Placeholders
+                                   data.frame(ENTER_VIO='Not Analyzed by App', ENTER_SAMP='Not Analyzed by App', 
+                                              ENTER_STAT='Not Analyzed by App', WAT_MET_VIO='Not Analyzed by App', 
+                                              WAT_MET_STAT='Not Analyzed by App', WAT_TOX_VIOv='Not Analyzed by App',
+                                              WAT_TOX_STAT='Not Analyzed by App', SED_MET_VIO='Not Analyzed by App', 
+                                              SED_MET_STAT='Not Analyzed by App', SED_TOX_VIO='Not Analyzed by App', 
+                                              SED_TOX_STAT='Not Analyzed by App', FISH_MET_VIO='Not Analyzed by App',
+                                              FISH_MET_STAT='Not Analyzed by App', FISH_TOX_VIO='Not Analyzed by App',
+                                              FISH_TOX_STAT='Not Analyzed by App', BENTHIC_STAT='Not Analyzed by App'),
+                                   TP_Exceedances(stationData), chlA_Exceedances(stationData, lakeStations),
+                                   data.frame(COMMENTS='Not Analyzed by App') ) %>%
+        dplyr::select(-ends_with('exceedanceRate'))
+      
+      stationTableResults <- rbind(stationTableResults,StationTableResults) }   }
+  }
+  
+timeDiff = Sys.time()- startTime
+```
+
+Below is the stations table output for BRRO. Since all AUs need to be split, the sample counts and violation % are essentially the AU results.
+
+```{r stationTable for users, echo=F, message=FALSE, warning=FALSE}
+DT::datatable(stationTableResults, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(stationTableResults), scrollY = "400px", dom='Btf'))
+
+```
+
+
+Below we can dig in how different each station in all AUs recommended for splitting are. The table subsets the above table to all the AUs where the analysis script recommended an AU to be split (i.e where any sample days were noted with > 1 meter difference in thermoclines among stations within an AU). The 'Percent of days abs(thermoDiff) > 1' column identifies the percent of sample days where the thermoclines in the AU differ by > 1 meter. 
+
+
+```{r where do we need to make AU splits?, echo=F, message=FALSE, warning=FALSE}
+
+AUsToSplit <- stationTableResults %>%
+  group_by(ID305B_1) %>%
+  dplyr::select(ID305B_1, Split, `Percent of days abs(thermoDiff) > 1`) %>%
+  arrange(desc(Split)) %>%
+  filter(Split=='Yes')
+
+DT::datatable(AUsToSplit, escape=F, rownames = F, 
+                  options= list(scrollX = TRUE, pageLength = nrow(AUsToSplit), scrollY = "400px", dom='Btf'))
+
+```
+
+
+Thus, if we consider a difference in thermoclines of 2 or more meters on any given sample day to represent different environmental conditions noted in a single AU, then Paula will have to split `r nrow(AUsToSplit)` AUs this cycle just based on DEQ data (not including citmon/nonagency data).
+
+
+#### Are there any AU's left with > 1 station that don't need to be split?
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+AUsamesame <- stationTableResults %>%
+  group_by(ID305B_1) %>%
+  dplyr::select(ID305B_1, Split,  `Percent of days abs(thermoDiff) > 1`) %>%
+  arrange(desc(Split)) %>%
+  filter(Split=='No') %>%
+  summarize(nStations = n())
+```
+
+Paula will have `r nrow(filter(AUsamesame, nStations>1))` AUs that have more that one station in them.
+
+
+#### So how many AUs is that for Paula to assess?
+
+Paula will go from `r nrow(lakeStations %>% distinct(ID305B_1))` AUs to `r sum(nrow(AUsamesame), nrow(AUsToSplit))` AUs this cycle, considering ONLY DEQ data. This number could go up when adding in Citmon/NonAgency data. that is a `r format(((sum(nrow(AUsamesame), nrow(AUsToSplit))-nrow(lakeStations %>% distinct(ID305B_1)))/nrow(lakeStations %>% distinct(ID305B_1)))*100,digits=3)` percent increase in AUs in a single cycle in less time that usually allocated to produce report.
+
+
+
+## New impairments to consider
+
+The new method means that each station we collect is now it's own AU. This warrants assessment of which stations have parameter issues that were previously undetected because the total n of AU denominator were mitigating violation counts.
+
+```{r newly impaired AUs, echo=F, message=FALSE, warning=FALSE}
+# Temp
+Tempissues <- filter(stationTableResults, TEMP_STAT == "10.5% Exceedance") %>% 
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissues <- filter(stationTableResults, DO_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissues <- filter(stationTableResults, PH_STAT == "10.5% Exceedance")%>% 
+  mutate(Problem = 'pH')
+
+# Bacteria 
+bacteriaissues <- filter(stationTableResults, ECOLI_STAT_OLD == "10.5% Exceedance")%>% 
+  mutate(Problem = 'e Coli')
+
+# chl a 
+chlAissues <- filter(stationTableResults, NUT_CHLA_STAT == "Review") %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Assess_TYPE), by = 'FDT_STA_ID') %>%
+  filter(Assess_TYPE == 'LZ') %>%
+  dplyr::select(Split:COMMENTS, Assess_TYPE)%>% 
+  mutate(Problem = 'Chl a')
+
+# TP
+TPissues <- filter(stationTableResults, NUT_TP_STAT == "Review") %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Assess_TYPE), by = 'FDT_STA_ID') %>%
+  filter(Assess_TYPE == 'LZ') %>%
+  dplyr::select(Split:COMMENTS, Assess_TYPE)%>% 
+  mutate(Problem = 'Total Phosphorus')
+
+
+# unique AUs with problems of any sort
+uniqueProblems <- bind_rows(Tempissues,DOissues, pHissues, bacteriaissues, chlAissues, TPissues) %>%
+  distinct(ID305B_1)
+```
+
+The new method renders:
+
+* `r nrow(Tempissues)` AUs with a temperature problem
+* `r nrow(DOissues)` AUs with a DO problem
+* `r nrow(pHissues)` AUs with a pH problem
+* `r nrow(bacteriaissues)` AUs with an e coli problem
+*  `r nrow(chlAissues)` AUs with a Chlorophyll a problem
+* `r nrow(TPissues)` AUs with a TP issue
+ 
+The total number of new impairments we can expect this cycle (without any citmon/nonAgency data) is `r sum(nrow(Tempissues),nrow(DOissues),nrow(pHissues), nrow(bacteriaissues), nrow(chlAissues), nrow(TPissues))`, ignoring duplicated AUs, that number is `r nrow(uniqueProblems)` unique AU listings.
+
+
+
+The below map identifies each station that is flagged to have problems (violations worthy of listing AU for at least one parameter). Remember, in this scenario, each station is its own AU. Hover mouse over layer button in top left corner to turn each layer on or off. All points can be clicked for addtional site information.
+
+```{r AU/station problem map, echo=F, message=FALSE, warning=FALSE}
+Tempissues_sf <- Tempissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+DOissues_sf <- DOissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+pHissues_sf <- pHissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+bacteriaissues_sf <- bacteriaissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+chlAissues_sf <- chlAissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+TPissues_sf <- TPissues %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Latitude, Longitude), by = 'FDT_STA_ID') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+               remove = F, # don't remove these lat/lon cols from df
+               crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
+
+allProblems <- bind_rows(Tempissues_sf,DOissues_sf, pHissues_sf, bacteriaissues_sf, chlAissues_sf, TPissues_sf)
+
+mapview(Tempissues_sf, label = Tempissues_sf$STATION_ID, layer.name = c('Tempertaure Issues'), color='yellow',lwd=3,
+              stroke=TRUE, popup= popupTable(Tempissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION"))) +
+  mapview(DOissues_sf, label = DOissues_sf$STATION_ID, layer.name = c('DO Issues'), color='blue',lwd=3,
+              stroke=TRUE, popup= popupTable(DOissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION"))) + 
+  mapview(pHissues_sf, label = pHissues_sf$STATION_ID, layer.name = c('pH Issues'), color='red',lwd=3,
+              stroke=TRUE, popup= popupTable(pHissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION"))) + 
+  mapview(bacteriaissues_sf, label = bacteriaissues_sf$STATION_ID, layer.name = c('Bacteria Issues'), color='green',lwd=3,
+              stroke=TRUE, popup= popupTable(bacteriaissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION"))) +
+  mapview(chlAissues_sf, label = chlAissues_sf$STATION_ID, layer.name = c('Chl a Issues'), color='orange',lwd=3,
+              stroke=TRUE, popup= popupTable(chlAissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION"))) +
+  mapview(TPissues_sf, label = TPissues_sf$STATION_ID, layer.name = c('TP Issues'), color='purple',lwd=3,
+              stroke=TRUE, popup= popupTable(TPissues_sf, zcol=c("Split","ID305B_1","STATION_ID","REGION")))
+
+
+```
+
+
+### Some flexibility
+
+If we allow > 1 meter difference in thermocline to be same AU if it only occurs <10.5% of the time (during 6 year window) then we will have the below counts: ( off the cuff numbers just indicate that VAW-L51L_SRE01A02 will be only AU not needing split with above mentioned 10.5% rule applied )
+
+```{r new method, echo=F, message=FALSE, warning=FALSE}
+# Temp
+Tempissues10.5 <- filter(stationTableResults, TEMP_STAT == "10.5% Exceedance") %>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'Temperature')
+
+# DO 
+DOissues10.5 <- filter(stationTableResults, DO_STAT == "10.5% Exceedance") %>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'Dissolved Oxygen')
+
+# pH 
+pHissues10.5 <- filter(stationTableResults, PH_STAT == "10.5% Exceedance") %>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'pH')
+
+# Bacteria 
+bacteriaissues10.5 <- filter(stationTableResults, ECOLI_STAT_OLD == "10.5% Exceedance") %>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'e Coli')
+
+# chl a 
+chlAissues10.5 <- filter(stationTableResults, NUT_CHLA_STAT == "Review") %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Assess_TYPE), by = 'FDT_STA_ID') %>%
+  filter(Assess_TYPE == 'LZ') %>%
+  dplyr::select(Split:COMMENTS, Assess_TYPE)%>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'Chl a')
+
+# TP
+TPissues10.5 <- filter(stationTableResults, NUT_TP_STAT == "Review") %>%
+  mutate(FDT_STA_ID = STATION_ID) %>% # make joining column
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, Assess_TYPE), by = 'FDT_STA_ID') %>%
+  filter(Assess_TYPE == 'LZ') %>%
+  dplyr::select(Split:COMMENTS, Assess_TYPE)%>% 
+  filter(!(ID305B_1 =='VAW-L51L_SRE01A02')) %>%
+  mutate(Problem = 'Total Phosphorus')
+
+
+# unique AUs with problems of any sort
+uniqueProblems10.5 <- bind_rows(Tempissues10.5,DOissues10.5, pHissues10.5, bacteriaissues10.5, chlAissues10.5, TPissues10.5) %>%
+  distinct(ID305B_1)
+```
+
+
+
+* `r nrow(Tempissues10.5)` AUs with a temperature problem
+* `r nrow(DOissues10.5)` AUs with a DO problem
+* `r nrow(pHissues10.5)` AUs with a pH problem
+* `r nrow(bacteriaissues10.5)` AUs with an e coli problem
+*  `r nrow(chlAissues10.5)` AUs with a Chlorophyll a problem
+* `r nrow(TPissues10.5)` AUs with a TP issue
+ 
+The total number of new impairments we can expect this cycle (without any citmon/nonAgency data AND applying a rule that thermoclines in a given AU can differ > 1 meter per sample day up to 10.5% of the time) is `r sum(nrow(Tempissues10.5),nrow(DOissues10.5),nrow(pHissues10.5), nrow(bacteriaissues10.5), nrow(chlAissues10.5), nrow(TPissues10.5))`, ignoring duplicated AUs, that number is `r nrow(uniqueProblems10.5)` unique AU listings.
+
+
+
+### Initial Thoughts (from Emma, not representing anyone else in BRRO/DEQ)
+
+Most DO infractions would be dropped if we did not assess on unstratified samples where there is evidence that the lake stratifies and we just happened to be out on a day when it is turning over. e.g. 4AROA175.63, 4AROA180.21, 4AROA183.64 and this proposed process would still capture where there are real infractions in epilimnion that should be addressed: 
+* See lake app for these plots
+* Is it fair to the lake that stratifies to assess it on days that we happen to capture it turning over? I'm not a lake expert, just asking.
+
+The number of AUs Paula will need to split is significant, especially considering the timeline of the 2020 report.
+
+Unless a new agreement on thermocline depths can be reached, the median method cannot be employed because none of the AUs in BRRO contain stations that consistently report identical thermocline depths throughout the sampling season. 
+
+If a citmon/non agency station lies in an existing DEQ AU and said group only collects surface samples, how do we know the stations are representing the same AU? Seems like we wouldn't be applying the rules fairly if we allow those stations to not be broken out to separate AUs. Going on the information presented above, I'm willing to bet if they did collect thermocline data then it would not match other station datasets enough to call them the same AU.
+
+Can we get our hands on digitized bathymetric profiles of each (large) significant lake to verify citmon/nonagency stations can be used (check whether they fall into LZ or not in a reproducible manner)
+
+Guidance Language:
+"In order to use citizen data in assessments for nutrient impairments, the collector must provide documentation that the data meet QA/QC requirements for chlorophyll a and total phosphorus (orthophosphate-P for Mountain Lake) and that the location of the sampling was within the lacustrine portion of the reservoir and outside the littoral (near shore) zone and corresponds with the lake monitoring year requirements. "
+
+* Below is map of current version of citmon data filtered to unique stations where chl a or TP data exists. The yellow markers indicate BRRO lacustrine stations. Note all the differences in location that could easily be handled if we had an automated way of determining whether or not something is in a lake lacustrine zone. Much time could be saved and using/not using nutrient data could be more defensible/reproducible. 
+
+```{r quick nut demo, echo=F, message=FALSE, warning=FALSE}
+
+cit <- read_csv('data/CitizenNonAgency/2020IR Citizen Ambient4.14.19 (2).csv') %>%
+  dplyr::select(Group_Station_ID:`DEQ QA Comments`) # drop junk columns
+
+# Count occurrences of each Group_Station_ID
+cit1 <- dplyr::select(cit, Group_Station_ID, FDT_STA_ID, STA_DESC, Latitude, Longitude)
+
+citCounts <- cit1 %>% 
+  group_by(Group_Station_ID, Latitude, Longitude) %>%
+  summarize(`Number of Station Sampling Events` = n())
+
+citDetailscit <- cit1 %>% 
+  group_by(Group_Station_ID, Latitude, Longitude) %>%
+  mutate(`Number of Station Sampling Events` = n(),
+         STA_DESC_norm = str_replace_all(STA_DESC, "[^[:alnum:]]", " ")) %>%
+  distinct() %>%
+  arrange(Group_Station_ID) %>%
+  tibble::rownames_to_column() %>%
+  as_tibble()
+
+missingLocation <- filter(citDetailscit, is.na(Latitude) | is.na(Longitude) | Latitude == 0 | Longitude == 0)
+
+citDetailscit_sf <- citDetailscit %>%
+  filter(!(rowname %in% missingLocation$rowname)) %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+           remove = F, # don't remove these lat/lon cols from df
+           crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng,
+
+
+# get rid of weird characters to plot points
+weirdThingsFixed <- citDetailscit_sf %>% dplyr::select(-STA_DESC)
+
+# BRRO lz stations
+BRROLZ <- filter(lakeStations, Assess_TYPE == 'LZ') %>%
+  st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
+           remove = F, # don't remove these lat/lon cols from df
+           crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng,
+
+
+
+# chla TP check
+nut <- filter(cit, !is.na(`CHLOROPHYLL_32211_ug/L`) | !is.na(`PHOSPHORUS_DISSOLVED_00666_mg/L`)) 
+weirdThingsFixed_nut <- filter(weirdThingsFixed, Group_Station_ID %in% unique(nut$Group_Station_ID))
+mapview(weirdThingsFixed_nut, label=weirdThingsFixed_nut$Group_Station_ID) +
+  mapview(BRROLZ, label=BRROLZ$FDT_STA_ID, color='yellow')
+
+```
+
+
+
+
+

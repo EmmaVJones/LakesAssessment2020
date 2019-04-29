@@ -1,0 +1,198 @@
+---
+title: "Quick Lake stats BRRO"
+author: "Emma Jones"
+date: "April 11, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(readxl)
+library(FSA)
+library(lubridate)
+library(magrittr)
+
+# Bring in Assessment functions from app
+source('global.R')
+```
+
+This document walks users through runing the automated assessement for their region. Prior to this point, the user needs to have completed the necessary prerequisites. This dataset is a companion to the lakes/reservoir assessment application and is **NOT** final. The results cited in this table are identical to the app calculations and are meant for assessor review, QA, editing prior to finalizing.
+
+# Prerequisites
+The user will have to have all conventionals data organized by Roger for the window.  Last cycle's finalized regional assessment layer (shapefile with AUs) are the spatial component needed. Lastly, the assessor must have the stations 2.0 table for the upcoming cycle completely filled out in order to run the assessment with attached significant lake information. 
+
+```{r datasources}
+# Regional AU layer from last cycle
+lakeAU <- st_read('GIS/draft2018IR_AUs/va_2018_aus_reservoir.shp')
+
+
+# Roger's conventionals data pull
+conventionals <- read_csv('data/final2020data/CEDSWQM_2020_IR_DATA-CONVENTIONALS_20190305.csv') %>%
+  filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
+  rename("FDT_TEMP_CELCIUS"  ="TEMPERATURE_00010_DEGREES CENTIGRADE",
+         "FDT_TEMP_CELCIUS_RMK" = "FDT_TEMP_CELCIUS_RMK",  
+         "FDT_FIELD_PH" = "pH_00400_STD_UNITS" ,          
+         "FDT_FIELD_PH_RMK"  ="FDT_FIELD_PH_RMK", 
+         "DO" =  "DO_mg/L",       
+         "DO_RMK"  ="DO_RMK",    
+         "FDT_SPECIFIC_CONDUCTANCE"="SPECIFIC_CONDUCTANCE_00095_UMHOS/CM @ 25C",    
+         "FDT_SPECIFIC_CONDUCTANCE_RMK" ="FDT_SPECIFIC_CONDUCTANCE_RMK" ,
+         "FDT_SALINITY" = "SALINITY_00480_PPT" ,            
+         "FDT_SALINITY_RMK"  ="FDT_SALINITY_RMK",  
+         "NITROGEN" = "NITROGEN_mg/L" ,                    
+         "AMMONIA" ="AMMONIA_mg/L",
+         "PHOSPHORUS" =  "PHOSPHORUS_mg/L",
+         "FECAL_COLI" = "FECAL_COLIFORM_31616_NO/100mL" ,
+         "E.COLI" = "ECOLI_CFU/100mL",                       
+         "ENTEROCOCCI" =  "ENTEROCOCCI_31649_NO/100mL",
+         "CHLOROPHYLL" ="CHLOROPHYLL_32211_ug/L",                
+         "SSC" ="SSC-TOTAL_00530_mg/L" , 
+         "NITRATE" ="NITRATE_mg/L", 
+         "CHLORIDE" ="CHLORIDE_mg/L",
+         "SULFATE_TOTAL" ="SULFATE_TOTAL_00945_mg/L",              
+         "SULFATE_DISS" ="SULFATE_DISSOLVED_00946_mg/L")
+conventionals$FDT_DATE_TIME2 <- as.POSIXct(conventionals$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+
+
+#lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_SWRO.csv')
+lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_BRRO.csv')
+
+
+monStationTemplate <- read_csv('data/newMonStationTemplate.csv') # from X:\2018_Assessment\StationsDatabase\VRO but added new bacteria columns
+
+
+```
+
+
+# Data manipulation
+
+Now that we have all the data we need to run the assessment, we need to reorganize it to run smoothly through the app assessment functions. 
+
+```{r data manipulation}
+
+conventionals_Lake <- left_join(conventionals,
+                                dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                                              STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                                              SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID') %>%
+    left_join(WQSvalues, by = 'CLASS') 
+
+
+```
+
+
+
+## How many lakes with multiple AU's?
+
+```{r AU per lake}
+View(lakeAU %>%
+  group_by(WATER_NAME) %>%
+  summarise(n = n()) %>%
+  filter(n >1) %>%
+  arrange(desc(n)))
+
+```
+
+By far BRRO has most lakes with more than 1 AU per lake
+
+
+
+## In BRRO lakes with more than one AU, how many sites per AU?
+
+```{r BRRO sites per AU}
+View(
+lakeStations %>% 
+  group_by(SIGLAKENAME) %>% 
+  mutate(n_StationsInLake=n()) %>% 
+  ungroup %>% 
+  filter(n_StationsInLake > 1) %>% 
+  group_by(ID305B_1) %>% 
+  mutate(n_StationsInAU = n()) %>%
+  filter(n_StationsInAU > 1) %>%
+  arrange(desc(n_StationsInAU)) %>% 
+  ungroup() %>%
+  dplyr::select( SIGLAKENAME, n_StationsInLake, n_StationsInAU, FDT_STA_ID, ID305B_1, ID305B_2, ID305B_3, Assess_TYPE, 
+          STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, COMMENTS)
+)
+```
+
+Kerr has 1 AU??? and 7 sites in it?
+Next closest is Moomaw with 2 sites (DEQ only) in a single AU
+
+Working with Moomaw AU with > 1 station in it VAW-I03L_JKS01A02
+
+```{r Moomaw}
+lake_filter <- filter(lakeStations, SIGLAKENAME == "Lake Moomaw")
+  
+  
+conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$FDT_STA_ID)) %>%
+  left_join(dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                            STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                            SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID')
+
+AUData <- filter(conventionals_Lake, ID305B_1 %in% 'VAW-I03L_JKS01A02')  %>% 
+  left_join(WQSvalues, by = 'CLASS') 
+
+# Create Data frame with all data within ID305B and stratification information
+# Pool thermocline data to get 1 sample per day, not 2 with top/bottom time difference
+AUData$FDT_DATE_TIME <- as.POSIXct(AUData$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+AUData <- mutate(AUData, SampleDate=format(FDT_DATE_TIME,"%m/%d/%y"))%>% # Separate sampling events by day
+  filter(!is.na(FDT_TEMP_CELCIUS))# remove any NA values to keep thermocline function happy
+thermo <- stratifiedLake(AUData)
+thermo$ThermoclineDepth <- as.numeric(thermo$ThermoclineDepth)
+stationDataDailySample <- plyr::join(AUData,thermo,by=c('FDT_STA_ID','SampleDate')) %>%
+  mutate(LakeStratification= ifelse(FDT_DEPTH < ThermoclineDepth,"Epilimnion","Hypolimnion"))
+       
+unique(stationDataDailySample$FDT_STA_ID)
+```
+
+
+Now to the real part. How many times are teh thermocline different on a given sample day?
+
+```{r}
+moo <- dplyr::select(stationDataDailySample, FDT_STA_ID, SampleDate, ThermoclineDepth, LakeStratification) %>%
+    group_by(FDT_STA_ID, SampleDate) %>%
+    filter(LakeStratification %in% c("Epilimnion",NA)) %>%
+    #mutate(n=n())
+    summarize(n= n()) %>%
+    arrange(SampleDate)
+```
+
+
+Compare all days (wide)
+
+```{r}
+View(spread(moo, SampleDate, n))
+```
+
+
+When are the thermocline depths identical?
+
+```{r}
+diffThermo <- moo %>%
+       group_by(SampleDate)%>%
+       summarize(diffInThermoclineDepth= diff(n))
+
+View(diffThermo)
+```
+
+Percent of days that thermocline is identical?
+```{r}
+paste(format(((nrow(filter(diffThermo, diffInThermoclineDepth == 0)) / nrow(diffThermo)) * 100), digits=4),'%', sep='')
+```
+
+Percent of days when thermocline different where thermocline depth difference > 1 meters
+
+```{r}
+sigDiff <- filter(diffThermo, abs(diffInThermoclineDepth) > 1)
+
+paste(format((nrow(sigDiff) / nrow(filter(diffThermo, diffInThermoclineDepth != 0)) * 100), digits=4),'%', sep='')
+
+```
+
+
+```{r}
+paste('So of the ', nrow(filter(diffThermo, diffInThermoclineDepth != 0)), " days that the thermocline isn't the same, ", paste(format((nrow(sigDiff) / nrow(filter(diffThermo, diffInThermoclineDepth != 0)) * 100), digits=4),'%', sep=''), "of the time the thermocline difference is over 2 meters in depth")
+```
+

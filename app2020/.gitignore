@@ -1,0 +1,55 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files
+.RData
+
+# Example code in package build process
+*-Ex.R
+
+# Output files from R CMD build
+/*.tar.gz
+
+# Output files from R CMD check
+/*.Rcheck/
+
+# RStudio files
+.Rproj.user/
+
+# produced vignettes
+vignettes/*.html
+vignettes/*.pdf
+
+# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+.httr-oauth
+
+# knitr and R markdown default cache directories
+/*_cache/
+/cache/
+
+# Temporary files created by R markdown
+*.utf8.md
+*.knit.md
+
+# Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
+rsconnect/
+
+
+app2020/GIS/
+app2020/data/
+app2020/processedStationData/
+app2018/data/conventionals08152018EVJ.csv
+CONVENTIONALS_20171010_updated.csv
+data/
+.Rproj.user
+Paula_tbl_ir_mon_stations_BRRO_2018_JRH_v1 (2).xlsx
+PaulaCMONLake.xlsx
+app2020/Lake_portableApp_v1/
+app2020/Lake_portableApp_v1.zip
+app2020/Lake_portableApp_SWRO/
+app2020/Lake_portableApp_SWRO.zip
+app2020/Lake_portableApp_Statewide/
+app2020/Lake_portableApp_Statewide.zip
+*.csv
+*.zip

@@ -1,0 +1,121 @@
+---
+title: "2018 IR Lake Analysis BRRO"
+author: "Emma Jones"
+date: "August 16, 2017"
+output: html_document
+---
+
+##### This script begins the process of assessing lakes for BRRO. It was built in R version 3.4.1 "Single Candle"
+
+Preliminary Step: set up R working environment
+```{r setup, include=TRUE, message=FALSE}
+library(tidyverse) # Data analysis extraordinaire
+library(readxl) # To read in Excel Workbooks
+```
+
+
+1) Start with Roger's data pull. Bring in Conventionals.xlsx. Bring in SignificantLakesReservoirs.xlsx as a 'word bank' to help subset stations associated with each lake.
+```{r echo=TRUE,warning=FALSE, message=FALSE}
+conventionals <- read_excel('C:/HardDriveBackup/IR/IR2018/CONVENTIONALS.20170815.xlsx',sheet = 'CONVENTIONALS')
+glimpse(conventionals)
+
+# first attempt
+#sigLakes <- read_excel('C:/HardDriveBackup/IR/IR2018/SignificantLakesReservoirs.xlsx',sheet = 'Sheet1')
+
+# better attempt, pulled attribute table from 2016_wqms shapefile, converted from .txt to .csv
+# Keep only lake sites for WCRO, remember to grab any L designation in Type1,2,3 station designation
+wqms_L <- read_csv('C:/HardDriveBackup/IR/IR2018/2016_wqms.csv')%>%
+  filter(REGION%in%c('WCRO','SCRO'))%>%
+  filter(STA_TYPE1=="L"|STA_TYPE2=="L"|STA_TYPE3=="L")
+
+# need to figure out how this is actually helpful for populating significant lake sites
+```
+
+2) Subset one lake, use significant lake table to figure out stations to subsets
+
+```{r}
+moo <- subset(conventionals, FDT_STA_ID %in% c("2-JKS046.40","2-JKS048.90","2-JKS053.48","2-JKS044.60"))
+
+```
+
+
+3) Figure out which sites are Lacstrine Zone
+
+```{r}
+moo <- mutate(moo,STATION_ID=FDT_STA_ID) #make common column to join to wqms_L
+moo_wqms_L <- plyr::join(moo,wqms_L,by="STATION_ID")
+# Depth = LZ is where this info is located
+
+```
+
+4) In LZ, pick one site
+```{r}
+moo1 <- filter(moo_wqms_L,STATION_ID=="2-JKS044.60")
+
+```
+
+
+5) Begin assessing by parameter A=pH, B=DO, C=TP, D=chlA
+
+5.A) pH Assessment
+
+5.A.1) pH Assessment- All samples during assessment period?
+```{r}
+assessmentPeriod <- as.POSIXct(c("2010-01-01 00:00:00 UTC","2015-12-31 23:59:59 UTC"),tz='UTC')
+
+withinAssessmentPeriod <- function(x){
+  print(unique(x$FDT_DATE_TIME))
+  
+  if((range(unique(x$FDT_DATE_TIME))[1] < assessmentPeriod[1])|(range(unique(x$FDT_DATE_TIME))[2] > assessmentPeriod[2])){print('Lake data included that falls outside of assessment period. Review input data.')}else{print('All input lake data falls within the assessment period.')}
+}
+
+withinAssessmentPeriod(moo1)
+
+```
+
+5.A.2) pH Assessment- Compare each observation vs min and max for class. 
+
+```{r}
+
+pHrange <- c(6,9)
+
+pH_rangeAssessment <- function(x){
+  
+  
+  pH <- select(x,FDT_DATE_TIME,FDT_DEPTH,FDT_FIELD_PH)%>% # Just get relavent columns, 
+    filter(!is.na(FDT_FIELD_PH))%>% #get rid of NA's
+    mutate(interval=findInterval(FDT_FIELD_PH,pHrange))%>% # Identify where pH outside of assessment range
+    mutate(pHrange=ifelse(interval==1,T,F))%>% # Highlight where pH doesn't fall into assessment range
+    filter(pHrange==FALSE)%>% # Only return pH measures outside of assessement range
+    select(-interval) # Don't show user interval column, could be confusing to them, T/F in pHrange column sufficient
+  
+  return(pH)
+}
+
+pH_rangeAssessment(moo1)
+
+```
+
+
+5.A.3) pH Assessment- Does the data contain 2 or more excursions and > 10.5% excursions fo total samples?
+
+```{r}
+
+exceedance_pH <- function(x){
+  
+  pH <- select(x,FDT_DATE_TIME,FDT_DEPTH,FDT_FIELD_PH)%>% # Just get relavent columns, 
+    filter(!is.na(FDT_FIELD_PH)) #get rid of NA's
+  pH_rangeAssess <- pH_rangeAssessment(x)
+  
+  pH_results <- data.frame(nSamples = nrow(pH),nExceedance = nrow(pH_rangeAssess))%>%
+    mutate(exceedanceRate = (nExceedance/nSamples)*100,
+           pH_Determination = ifelse(exceedanceRate > 10.5 & nSamples > 2, 
+                                     'Water impaired for pH','Water not imparied for pH'))
+  return(pH_results)
+}
+
+exceedance_pH(moo1)
+
+```
+
+
