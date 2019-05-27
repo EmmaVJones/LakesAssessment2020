@@ -36,9 +36,13 @@ vignettes/*.pdf
 rsconnect/
 
 
-app2020/GIS/
-app2020/data/
-app2020/processedStationData/
+app2020/LakeAssessmentApp_v1/GIS/
+app2020/LakeAssessmentApp_v1/data/
+app2020/LakeAssessmentApp_v1/processedStationData/
+app2020/LakeAssessmentApp_v2/GIS/
+app2020/LakeAssessmentApp_v2/data/
+app2020/LakeAssessmentApp_v2/processedStationData/
+
 app2018/data/conventionals08152018EVJ.csv
 CONVENTIONALS_20171010_updated.csv
 data/
