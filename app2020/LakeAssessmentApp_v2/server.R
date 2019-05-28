@@ -52,9 +52,9 @@ shinyServer(function(input, output, session) {
       st_as_sf(coords = c("Longitude", "Latitude"),  # make spatial layer using these columns
                remove = F, # don't remove these lat/lon cols from df
                crs = 4326) # add coordinate reference system, needs to be geographic for now bc entering lat/lng, 
-    AUs <- filter(lakeAU, ID305B %in% as.character( points_sf $ID305B_1)) # | # removing all options for more than one ID305B to be associated with a single station
-                    #ID305B %in% as.character( points_sf $ID305B_2) |
-                    #ID305B %in% as.character( points_sf $ID305B_3))
+    AUs <- filter(lakeAU, ID305B %in% as.character( points_sf $ID305B_1) | # removing all options for more than one ID305B to be associated with a single station
+                    ID305B %in% as.character( points_sf $ID305B_2) |
+                    ID305B %in% as.character( points_sf $ID305B_3))
     AUs$ID305B <- factor(AUs$ID305B) # drop extra factor levels so colors come out right
     
     map1 <- mapview(AUs,zcol = 'ID305B', label= AUs$ID305B, layer.name = 'Assessment Unit',
@@ -118,9 +118,9 @@ shinyServer(function(input, output, session) {
   
   
   AUData <- eventReactive( input$AUSelection, {
-    filter(conventionals_Lake(), ID305B_1 %in% input$AUSelection)  %>% #| remove all options for more than one ID305B to be associated with a single station
-             #ID305B_2 %in% input$AUSelection | 
-            # ID305B_2 %in% input$AUSelection) %>% 
+    filter(conventionals_Lake(), ID305B_1 %in% input$AUSelection | 
+             ID305B_2 %in% input$AUSelection | 
+             ID305B_2 %in% input$AUSelection) %>% 
       left_join(WQSvalues, by = 'CLASS') }) 
   
   stationData <- eventReactive( input$stationSelection, {

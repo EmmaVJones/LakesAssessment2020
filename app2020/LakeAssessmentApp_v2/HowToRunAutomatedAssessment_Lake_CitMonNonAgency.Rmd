@@ -1,0 +1,267 @@
+---
+title: "How to run automated assessment- Lake"
+author: "Emma Jones"
+date: "March 8, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(readxl)
+library(FSA)
+library(lubridate)
+library(magrittr)
+
+# Bring in Assessment functions from app
+source('global.R')
+```
+
+This document walks users through runing the automated assessement for their region. Prior to this point, the user needs to have completed the necessary prerequisites. This dataset is a companion to the lakes/reservoir assessment application and is **NOT** final. The results cited in this table are identical to the app calculations and are meant for assessor review, QA, editing prior to finalizing.
+
+# Prerequisites
+The user will have to have all conventionals data organized by Roger for the window.  Last cycle's finalized regional assessment layer (shapefile with AUs) are the spatial component needed. Lastly, the assessor must have the stations 2.0 table for the upcoming cycle completely filled out in order to run the assessment with attached significant lake information. 
+
+```{r datasources}
+# Regional AU layer from last cycle
+lakeAU <- st_read('GIS/draft2018IR_AUs/va_2018_aus_reservoir.shp')
+
+
+# Roger's conventionals data pull
+#conventionals <- read_csv('data/final2020data/CEDSWQM_2020_IR_DATA-CONVENTIONALS_20190305.csv') %>%
+conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency.csv') %>%
+  filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
+  rename("FDT_TEMP_CELCIUS"  ="TEMPERATURE_00010_DEGREES CENTIGRADE",
+         "FDT_TEMP_CELCIUS_RMK" = "FDT_TEMP_CELCIUS_RMK",  
+         "FDT_FIELD_PH" = "pH_00400_STD_UNITS" ,          
+         "FDT_FIELD_PH_RMK"  ="FDT_FIELD_PH_RMK", 
+         "DO" =  "DO_mg/L",       
+         "DO_RMK"  ="DO_RMK",    
+         "FDT_SPECIFIC_CONDUCTANCE"="SPECIFIC_CONDUCTANCE_00095_UMHOS/CM @ 25C",    
+         "FDT_SPECIFIC_CONDUCTANCE_RMK" ="FDT_SPECIFIC_CONDUCTANCE_RMK" ,
+         "FDT_SALINITY" = "SALINITY_00480_PPT" ,            
+         "FDT_SALINITY_RMK"  ="FDT_SALINITY_RMK",  
+         "NITROGEN" = "NITROGEN_mg/L" ,                    
+         "AMMONIA" ="AMMONIA_mg/L",
+         "PHOSPHORUS" =  "PHOSPHORUS_mg/L",
+         "FECAL_COLI" = "FECAL_COLIFORM_31616_NO/100mL" ,
+         "E.COLI" = "ECOLI_CFU/100mL",                       
+         "ENTEROCOCCI" =  "ENTEROCOCCI_31649_NO/100mL",
+         "CHLOROPHYLL" ="CHLOROPHYLL_32211_ug/L",                
+         "SSC" ="SSC-TOTAL_00530_mg/L" , 
+         "NITRATE" ="NITRATE_mg/L", 
+         "CHLORIDE" ="CHLORIDE_mg/L",
+         "SULFATE_TOTAL" ="SULFATE_TOTAL_00945_mg/L",              
+         "SULFATE_DISS" ="SULFATE_DISSOLVED_00946_mg/L")
+###### CHANGED 5/22/19
+#conventionals$FDT_DATE_TIME2 <- as.POSIXct(conventionals$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+
+
+#lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_SWRO.csv')
+lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_BRRO_citmonNonAgency.csv')
+
+
+citMon <- read_csv('data/CitMonOrganizedDataBRRO.csv')
+
+nonA <- read_csv('data/NonAgencyOrganizedDataBRRO.csv')
+
+
+
+monStationTemplate <- read_csv('data/newMonStationTemplate2.csv')
+  # from X:\2018_Assessment\StationsDatabase\VRO but added new bacteria columns
+
+```
+
+
+
+# Data manipulation
+
+Now that we have all the data we need to run the assessment, we need to reorganize it to run smoothly through the app assessment functions. 
+
+```{r data manipulation}
+
+conventionals_Lake <- left_join(conventionals,
+                                dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                                              STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                                              SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID') %>%
+    left_join(WQSvalues, by = 'CLASS') 
+
+
+```
+
+
+
+# Automated assessment
+
+This loop runs the regional assessment for conventionals data for the input regional station table. The run time should be less than two minutes. Completely functionalizing the processes with purrr would speed up processing.
+
+```{r}
+# this is the totally lazy way of doing this, need to write functions to process faster
+
+stationTableResults <- monStationTemplate %>%
+      mutate_all(as.character) 
+
+# time it:
+startTime <- Sys.time()
+
+# loop over all sites, not super efficient but get the job done for now
+for(i in 1:length(unique(lakeStations$SIGLAKENAME))){
+  print(paste('Assessing lake', i, 'of', length(unique(lakeStations$SIGLAKENAME)), sep=' '))
+
+  # pull one lake data
+  lake_filter <- filter(lakeStations, SIGLAKENAME == unique(lakeStations$SIGLAKENAME)[i])
+  
+  
+  conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$FDT_STA_ID)) %>%
+    left_join(dplyr::select(lakeStations, FDT_STA_ID, SEC, CLASS, SPSTDS,PWS, ID305B_1, ID305B_2, ID305B_3,
+                            STATION_TYPE_1, STATION_TYPE_2, STATION_TYPE_3, ID305B, SEC187, SIG_LAKE, USE,
+                            SIGLAKENAME, Chlorophyll_A_limit, TPhosphorus_limit, Assess_TYPE), by='FDT_STA_ID') %>%
+    left_join(WQSvalues, by = 'CLASS') 
+  
+  # Create Data frame with all lake data and stratification information
+  # Pool thermocline data to get 1 sample per day, not 2 with top/bottom time difference
+  conventionals_Lake$FDT_DATE_TIME <- as.POSIXct(conventionals_Lake$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+  lakeData <- mutate(conventionals_Lake, SampleDate=format(FDT_DATE_TIME,"%m/%d/%y"))#%>% # Separate sampling events by day
+      #filter(!is.na(FDT_TEMP_CELCIUS))# remove any NA values to keep thermocline function happy
+  thermo <- stratifiedLake_citNonA(citmonOutOfParameterDataset(filter(lakeData, !is.na(FDT_TEMP_CELCIUS)), FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK) )
+  thermo$ThermoclineDepth <- as.numeric(thermo$ThermoclineDepth)
+  stationDataDailySample <- plyr::join(lakeData,thermo,by=c('FDT_STA_ID','SampleDate')) %>%
+    mutate(LakeStratification= ifelse(FDT_DEPTH < ThermoclineDepth,"Epilimnion","Hypolimnion"))
+  
+  
+  
+  # get total lake count data for Paula
+    
+  LakeCountSummary <- paste0(unique(lakeStations$SIGLAKENAME)[i], ' Summary: ', 
+                             paste(
+                               lakeConsolidation(tempExceedances(citmonOutOfParameterDataset(stationDataDailySample, FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK))),
+                               lakeConsolidation(DOExceedances_Min(citmonOutOfParameterDataset(stationDataDailySample, DO, DO_RMK))),
+                               lakeConsolidation(pHExceedances(citmonOutOfParameterDataset(stationDataDailySample, FDT_FIELD_PH, FDT_FIELD_PH_RMK))),
+                               lakeConsolidation(bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(stationDataDailySample, E.COLI, ECOLI_RMK),
+                                                                                                 'E.COLI', 126, 235),'E.COLI') %>% 
+                                                   dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP', 'ECOLI_STAT_OLD'='E.COLI_STAT')),
+                               # Do not run new ecoli standard on lake bc takes too long for big lakes and still only for awareness
+                               #lakeConsolidation(bacteriaExceedances_NEW(citmonOutOfParameterDataset(stationDataDailySample, E.COLI, ECOLI_RMK),'E.COLI', 10, 410, 126)),
+                               lakeConsolidation(TP_Exceedances(citmonOutOfParameterDataset(stationDataDailySample, PHOSPHORUS, RMK_PHOSPHORUS))),
+                               lakeConsolidation(chlA_Exceedances(citmonOutOfParameterDataset(stationDataDailySample, CHLOROPHYLL, RMK_32211), lakeStations)),
+                               sep= '; '))
+  
+  
+  
+  ## Assess One AU at a time
+  #for(k in 1:length(unique(conventionals_Lake$ID305B))) {
+  #  
+  #  print(paste('Assessing AU',k, 'of', length(unique(conventionals_Lake$ID305B)), sep=' '))
+  #  
+  #  ## to only run stations by the ID305B_1 designation
+  #  AUData <- filter(conventionals_Lake, ID305B_1 %in% unique(conventionals_Lake$ID305B)[k])  %>%  #| remove all options for more than one ID305B to be associated with a single station
+  #    left_join(WQSvalues, by = 'CLASS') 
+  #  
+  #  # To run stations by any ID305B_X designation
+  #  #AUData <- filter(conventionals_Lake, ID305B_1 %in% unique(conventionals_Lake$ID305B)[k] | 
+  #  #                   ID305B_2 %in% unique(conventionals_Lake$ID305B)[k] | 
+  #  #                   ID305B_2 %in% unique(conventionals_Lake$ID305B)[k]) %>% 
+  #  #  left_join(WQSvalues, by = 'CLASS')  
+  
+    
+    
+  #  # Create Data frame with all data within ID305B and stratification information
+  #  # Pool thermocline data to get 1 sample per day, not 2 with top/bottom time difference
+  #  AUData$FDT_DATE_TIME <- as.POSIXct(AUData$FDT_DATE_TIME, format="%m/%d/%Y %H:%M")
+  #  AUData <- mutate(AUData, SampleDate=format(FDT_DATE_TIME,"%m/%d/%y"))#%>% # Separate sampling events by day
+  #    #filter(!is.na(FDT_TEMP_CELCIUS))# remove any NA values to keep thermocline function happy
+  #  thermo <- stratifiedLake_citNonA(citmonOutOfParameterDataset(filter(AUData, !is.na(FDT_TEMP_CELCIUS)), FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK) )
+  #  thermo$ThermoclineDepth <- as.numeric(thermo$ThermoclineDepth)
+  #  stationDataDailySample <- plyr::join(AUData,thermo,by=c('FDT_STA_ID','SampleDate')) %>%
+  #    mutate(LakeStratification= ifelse(FDT_DEPTH < ThermoclineDepth,"Epilimnion","Hypolimnion"))
+    
+    
+    for(j in 1:length(unique(stationDataDailySample$FDT_STA_ID))){
+      print(paste('Assessing station',j, 'of', length(unique(stationDataDailySample$FDT_STA_ID)), sep=' '))
+      
+      stationData <-  filter(stationDataDailySample, FDT_STA_ID %in% unique(stationDataDailySample$FDT_STA_ID)[j])
+      
+      #citmon data being weird, have to run in own loop
+      # Only do this if citmon or NonAgency data
+      if(all(stationData$STA_LV3_CODE %in% c("CMON", "NONA", "NONA "))){
+        # for conventionals data
+        a <- 12:116
+        n <- length(a)
+        
+        holder <- NA
+        
+        for(k in a[seq(1,n,2)]){ 
+          x <- stationData[,c(k, k+1)]
+          holder[k] <- countSamplesAtLevels(x)
+          }
+        
+        citMonStationData <- filter(citMon, FDT_STA_ID %in% unique(stationData$FDT_STA_ID))
+        citmonExtras <- colSums(!is.na(citMonStationData[,138:165]))[!(colSums(!is.na(citMonStationData[,138:165])) ==0 )]
+        citmonExtras2 <- as.data.frame(citmonExtras) %>% rownames_to_column() %>% mutate(together = paste(rowname, ":",citmonExtras))
+      
+        nonAStationData <- filter(nonA, FDT_STA_ID %in% unique(stationData$FDT_STA_ID))
+        nonAExtras <- colSums(!is.na(nonAStationData[,137:164]))[!(colSums(!is.na(nonAStationData[,137:164])) ==0 )]
+        nonAExtras2 <- as.data.frame(nonAExtras) %>% rownames_to_column() %>% mutate(together = paste(rowname, ":",nonAExtras))
+      
+        citmonAllDataByLevel <- paste(paste0(holder[!is.na(holder)], collapse = '; '),citmonExtras2$together,';', nonAExtras2$together) 
+        } else {
+          citmonAllDataByLevel <- NULL
+        }
+
+      
+      
+      StationTableResults <- cbind(StationTableStartingData(stationData), 
+                                   tempExceedances(citmonOutOfParameterDataset(stationData, FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK)),
+                                   DOExceedances_Min(citmonOutOfParameterDataset(stationData, DO, DO_RMK)),
+                                   pHExceedances(citmonOutOfParameterDataset(stationData, FDT_FIELD_PH, FDT_FIELD_PH_RMK)),
+                                   bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(stationData, E.COLI, ECOLI_RMK), 'E.COLI', 126, 235),'E.COLI') %>% 
+                                     dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP', 'ECOLI_STAT_OLD'='E.COLI_STAT'),
+                                   bacteriaExceedances_NEW(citmonOutOfParameterDataset(stationData, E.COLI, ECOLI_RMK),'E.COLI', 10, 410, 126),
+                                   # Placeholders
+                                   data.frame(ENTER_VIO='Not Analyzed by App', ENTER_SAMP='Not Analyzed by App', 
+                                              ENTER_STAT='Not Analyzed by App', WAT_MET_VIO='Not Analyzed by App', 
+                                              WAT_MET_STAT='Not Analyzed by App', WAT_TOX_VIOv='Not Analyzed by App',
+                                              WAT_TOX_STAT='Not Analyzed by App', SED_MET_VIO='Not Analyzed by App', 
+                                              SED_MET_STAT='Not Analyzed by App', SED_TOX_VIO='Not Analyzed by App', 
+                                              SED_TOX_STAT='Not Analyzed by App', FISH_MET_VIO='Not Analyzed by App',
+                                              FISH_MET_STAT='Not Analyzed by App', FISH_TOX_VIO='Not Analyzed by App',
+                                              FISH_TOX_STAT='Not Analyzed by App', BENTHIC_STAT='Not Analyzed by App'),
+                                   TP_Exceedances(citmonOutOfParameterDataset(stationData, PHOSPHORUS, RMK_PHOSPHORUS)), 
+                                   chlA_Exceedances(citmonOutOfParameterDataset(stationData, CHLOROPHYLL, RMK_32211), lakeStations),
+                                   data.frame(COMMENTS=paste(LakeCountSummary, '| ','Citmon Data summary:',citmonAllDataByLevel)) ) %>%
+        dplyr::select(-ends_with('exceedanceRate'))
+      
+      stationTableResults <- rbind(stationTableResults,StationTableResults)   }   
+  }
+  
+timeDiff = Sys.time()- startTime
+rm(thermo);rm(stationData);rm(StationTableResults);rm(stationDataDailySample);rm(lake_filter);rm(conventionals_Lake);rm(lakeData)
+```
+
+
+It took `r timeDiff` to run ~ 80% of the regional assessment.
+
+
+Last thing, to help assessors speed up comment process and help identify where data that is not overviewed in app should be carried forward, attach last cycle's comments to the stations present in this cycle.
+
+```{r attach previous cycle comments}
+stationTableResultsWithComments <- left_join(stationTableResults, 
+                                             dplyr::select(lakeStations, STATION_ID, COMMENTS), by = 'STATION_ID') %>%
+  rename('COMMENTS' = 'COMMENTS.x','Last Cycle Comment' = 'COMMENTS.y')
+```
+
+
+
+Look at results.
+```{r look at results}
+View(stationTableResultsWithComments)
+       
+```
+
+Save results.
+```{r saveResults}
+regionCode <- 'BRRO'
+write.csv(stationTableResultsWithComments, paste("stationTableResults_",regionCode,'_',Sys.Date(),".csv",sep=''), row.names = FALSE, na="")
+```
+
