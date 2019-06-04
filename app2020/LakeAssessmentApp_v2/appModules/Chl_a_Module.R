@@ -110,14 +110,14 @@ chlAPlotlySingleStation <- function(input,output,session, AUdata, stationSelecte
   # selected station exceedance rate
   output$stationChlaExceedanceRate <- renderTable({
     req(chlA_oneStation())
-    LZ <- exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211),lakeStations)
+    LZ <- exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211),lakeStations())
     
     if(class(LZ) == 'character'){
       return("No Chlorophyll a data to assess.")
     }else{
       LZ <- LZ$LacustrineZone[1]
-      assessmentDetermination(exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211), lakeStations),
-                              filter(exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211), lakeStations), 
+      assessmentDetermination(exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211), lakeStations()),
+                              filter(exceedance_chlA(citmonOutOfParameterDataset(chlA_oneStation(), CHLOROPHYLL, RMK_32211), lakeStations()), 
                                      chlA_Exceedance ==T),'Chlorophyll a','Aquatic Life') %>%
         mutate(LacustrineZone=LZ) %>%# for chla and TP only, show whether or not in lacustrine zone with single station exceedance
         dplyr::select(nSamples,nExceedance,exceedanceRate, LacustrineZone) # don't give assessment determination for single station}})
@@ -129,19 +129,19 @@ chlAPlotlySingleStation <- function(input,output,session, AUdata, stationSelecte
   # Lake Chl a 90th percentiles
   output$chla90thTable <- renderTable({
     req(allLakeLZData())
-    exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations)})
+    exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations())})
   
   
   # All Lake LACUSTRINE ZONE Chlorophyll a exceedance rate
   output$chla_exceedanceRate <- renderTable({
     req(allLakeLZData())
-    z <- exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations)
+    z <- exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations())
     if(class(z)=='character'){
       return("No Chlorophyll a data to assess.")
     }else{
-      assessmentDetermination(filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations), 
+      assessmentDetermination(filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations()), 
                                      LacustrineZone == TRUE),
-                              filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations),
+                              filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations()),
                                      chlA_Exceedance ==T & LacustrineZone == TRUE),'Chlorophyll a','Aquatic Life')%>%
         dplyr::select(nSamples, nExceedance, exceedanceRate)}})
   
@@ -149,11 +149,13 @@ chlAPlotlySingleStation <- function(input,output,session, AUdata, stationSelecte
   # All Lake Chlorophyll a exceedance rate REGARDLESS OF WHETHER OR NOT STATIONS ARE IN LACUSTRINE ZONE 
   output$chla_exceedanceRateALL <- renderTable({
     req(allLakeLZData())
-    z <- exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations)
+    z <- exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations())
     if(class(z)=='character'){
       return("No Chlorophyll a data to assess.")
     }else{
-      assessmentDetermination(z,filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations),
+      assessmentDetermination(z,filter(exceedance_chlA(citmonOutOfParameterDataset(allLakeLZData(), CHLOROPHYLL, RMK_32211), lakeStations()),
                                        chlA_Exceedance ==T),'Chlorophyll a','Aquatic Life')%>%
         dplyr::select(nSamples, nExceedance, exceedanceRate)}})
 }
+
+

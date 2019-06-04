@@ -107,9 +107,9 @@ shinyServer(function(input, output, session) {
   
   output$stationSelection_ <- renderUI({ 
     req(conventionals_Lake(), input$AUSelection)
-    z <- filter(conventionals_Lake(), ID305B_1 %in% input$AUSelection )  %>% #| remove all options for more than one ID305B to be associated with a single station
-                  #ID305B_2 %in% input$AUSelection | 
-                  #ID305B_2 %in% input$AUSelection) %>%
+    z <- filter(conventionals_Lake(), ID305B_1 %in% input$AUSelection | #remove all options for more than one ID305B to be associated with a single station
+                  ID305B_2 %in% input$AUSelection | 
+                  ID305B_2 %in% input$AUSelection) %>%
       distinct(FDT_STA_ID)
     fluidRow(selectInput('stationSelection', 'Station Selection', choices = unique(z$FDT_STA_ID)),
              helpText("The stations available in the drop down are limited to stations with an ID305B_1 designation equal 

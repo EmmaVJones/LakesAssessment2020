@@ -132,19 +132,35 @@ for(i in 1:length(unique(lakeStations$SIGLAKENAME))){
   
   
   # get total lake count data for Paula
+  
+  # Just DEQ sites from stationDataDailySample
+  DEQstationDataDailySample <- filter(stationDataDailySample, !(STA_LV3_CODE %in% c("CMON","NONA")))
+  nonDEQstationDataDailySample <- filter(stationDataDailySample, STA_LV3_CODE %in% c("CMON","NONA"))
     
-  LakeCountSummary <- paste0(unique(lakeStations$SIGLAKENAME)[i], ' Summary: ', 
+  LakeCountSummary <- paste0(unique(lakeStations$SIGLAKENAME)[i], ' DEQ Data Summary: ', 
                              paste(
-                               lakeConsolidation(tempExceedances(citmonOutOfParameterDataset(stationDataDailySample, FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK))),
-                               lakeConsolidation(DOExceedances_Min(citmonOutOfParameterDataset(stationDataDailySample, DO, DO_RMK))),
-                               lakeConsolidation(pHExceedances(citmonOutOfParameterDataset(stationDataDailySample, FDT_FIELD_PH, FDT_FIELD_PH_RMK))),
-                               lakeConsolidation(bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(stationDataDailySample, E.COLI, ECOLI_RMK),
+                               lakeConsolidation(tempExceedances(DEQstationDataDailySample)),
+                               lakeConsolidation(DOExceedances_Min(DEQstationDataDailySample)),
+                               lakeConsolidation(pHExceedances(DEQstationDataDailySample)),
+                               lakeConsolidation(bacteriaExceedances_OLD(bacteria_Assessment_OLD(DEQstationDataDailySample, 'E.COLI', 126, 235),'E.COLI') %>% 
+                                                   dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP', 'ECOLI_STAT_OLD'='E.COLI_STAT')),
+                               # Do not run new ecoli standard on lake bc takes too long for big lakes and still only for awareness
+                               #lakeConsolidation(bacteriaExceedances_NEW(citmonOutOfParameterDataset(stationDataDailySample, E.COLI, ECOLI_RMK),'E.COLI', 10, 410, 126)),
+                               lakeConsolidation(TP_Exceedances(DEQstationDataDailySample)),
+                               lakeConsolidation(chlA_Exceedances(DEQstationDataDailySample, lakeStations)),
+                               sep= '; '),
+                             " | ", unique(lakeStations$SIGLAKENAME)[i], ' Other Data Summary: ', 
+                             paste(
+                               lakeConsolidation(tempExceedances(citmonOutOfParameterDataset(nonDEQstationDataDailySample, FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK))),
+                               lakeConsolidation(DOExceedances_Min(citmonOutOfParameterDataset(nonDEQstationDataDailySample, DO, DO_RMK))),
+                               lakeConsolidation(pHExceedances(citmonOutOfParameterDataset(nonDEQstationDataDailySample, FDT_FIELD_PH, FDT_FIELD_PH_RMK))),
+                               lakeConsolidation(bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(nonDEQstationDataDailySample, E.COLI, ECOLI_RMK),
                                                                                                  'E.COLI', 126, 235),'E.COLI') %>% 
                                                    dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP', 'ECOLI_STAT_OLD'='E.COLI_STAT')),
                                # Do not run new ecoli standard on lake bc takes too long for big lakes and still only for awareness
                                #lakeConsolidation(bacteriaExceedances_NEW(citmonOutOfParameterDataset(stationDataDailySample, E.COLI, ECOLI_RMK),'E.COLI', 10, 410, 126)),
-                               lakeConsolidation(TP_Exceedances(citmonOutOfParameterDataset(stationDataDailySample, PHOSPHORUS, RMK_PHOSPHORUS))),
-                               lakeConsolidation(chlA_Exceedances(citmonOutOfParameterDataset(stationDataDailySample, CHLOROPHYLL, RMK_32211), lakeStations)),
+                               lakeConsolidation(TP_Exceedances(citmonOutOfParameterDataset(nonDEQstationDataDailySample, PHOSPHORUS, RMK_PHOSPHORUS))),
+                               lakeConsolidation(chlA_Exceedances(citmonOutOfParameterDataset(nonDEQstationDataDailySample, CHLOROPHYLL, RMK_32211), lakeStations)),
                                sep= '; '))
   
   
@@ -215,13 +231,14 @@ for(i in 1:length(unique(lakeStations$SIGLAKENAME))){
                                    tempExceedances(citmonOutOfParameterDataset(stationData, FDT_TEMP_CELCIUS, FDT_TEMP_CELCIUS_RMK)),
                                    DOExceedances_Min(citmonOutOfParameterDataset(stationData, DO, DO_RMK)),
                                    pHExceedances(citmonOutOfParameterDataset(stationData, FDT_FIELD_PH, FDT_FIELD_PH_RMK)),
-                                   bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(stationData, E.COLI, ECOLI_RMK), 'E.COLI', 126, 235),'E.COLI') %>% 
+                                   bacteriaExceedances_OLD(bacteria_Assessment_OLD(citmonOutOfParameterDataset(stationData, E.COLI, ECOLI_RMK), 'E.COLI', 126, 235)
+                                                           ,'E.COLI') %>% 
                                      dplyr::rename('ECOLI_VIO_OLD' = 'E.COLI_VIO', 'ECOLI_SAMP_OLD'='E.COLI_SAMP', 'ECOLI_STAT_OLD'='E.COLI_STAT'),
                                    bacteriaExceedances_NEW(citmonOutOfParameterDataset(stationData, E.COLI, ECOLI_RMK),'E.COLI', 10, 410, 126),
                                    # Placeholders
                                    data.frame(ENTER_VIO='Not Analyzed by App', ENTER_SAMP='Not Analyzed by App', 
                                               ENTER_STAT='Not Analyzed by App', WAT_MET_VIO='Not Analyzed by App', 
-                                              WAT_MET_STAT='Not Analyzed by App', WAT_TOX_VIOv='Not Analyzed by App',
+                                              WAT_MET_STAT='Not Analyzed by App', WAT_TOX_VIO='Not Analyzed by App',
                                               WAT_TOX_STAT='Not Analyzed by App', SED_MET_VIO='Not Analyzed by App', 
                                               SED_MET_STAT='Not Analyzed by App', SED_TOX_VIO='Not Analyzed by App', 
                                               SED_TOX_STAT='Not Analyzed by App', FISH_MET_VIO='Not Analyzed by App',
@@ -229,7 +246,9 @@ for(i in 1:length(unique(lakeStations$SIGLAKENAME))){
                                               FISH_TOX_STAT='Not Analyzed by App', BENTHIC_STAT='Not Analyzed by App'),
                                    TP_Exceedances(citmonOutOfParameterDataset(stationData, PHOSPHORUS, RMK_PHOSPHORUS)), 
                                    chlA_Exceedances(citmonOutOfParameterDataset(stationData, CHLOROPHYLL, RMK_32211), lakeStations),
-                                   data.frame(COMMENTS=paste(LakeCountSummary, '| ','Citmon Data summary:',citmonAllDataByLevel)) ) %>%
+                                   data.frame(COMMENTS=paste(LakeCountSummary, 
+                                                             ifelse(is.null(citmonAllDataByLevel), " " , 
+                                                                    paste('| Individual Station Citmon Data summary:',citmonAllDataByLevel))))  )  %>%
         dplyr::select(-ends_with('exceedanceRate'))
       
       stationTableResults <- rbind(stationTableResults,StationTableResults)   }   

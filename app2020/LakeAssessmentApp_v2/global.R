@@ -224,6 +224,7 @@ stratifiedLake_citNonA <- function(x){
   holder <- template
   if(nrow(x)>0){
     for(k in 1:length(unique(x$FDT_STA_ID))){
+      holder <- holder[0,]
       oneStation <- filter(x,FDT_STA_ID %in% unique(x$FDT_STA_ID)[k])
       for(i in 1:length(unique(oneStation$SampleDate))){
         oneProfile <- filter(oneStation,SampleDate %in% unique(oneStation$SampleDate)[i])%>%
@@ -238,8 +239,9 @@ stratifiedLake_citNonA <- function(x){
         holder[i,] <- cbind(oneStation$FDT_STA_ID[1],unique(oneStation$SampleDate)[i],format(therm), paste0(unique(oneStation$FDT_TEMP_CELCIUS_RMK)))
       }
       template <- rbind(template,holder)
-      template <- template[complete.cases(template[,1:3]),]
+      #template <- template[complete.cases(template[,1:3]),]
     }
+    template <- template[complete.cases(template[,1:3]),]
     row.names(template) <- 1:nrow(template)
     return(template)
   }else{
@@ -540,7 +542,7 @@ pHExceedances <- function(x){
   pH <- dplyr::select(x,FDT_DATE_TIME,FDT_FIELD_PH,`pH Min`,`pH Max`, LakeStratification)%>% # Just get relevant columns, 
     filter(!is.na(FDT_FIELD_PH))%>% #get rid of NA's
     filter(LakeStratification %in% c("Epilimnion",NA)) %>%
-    rowwise() %>% mutate(interval=findInterval(FDT_FIELD_PH,c(`pH Min`,`pH Max`)))%>% # Identify where pH outside of assessment range
+    rowwise() %>% mutate(interval=findInterval(FDT_FIELD_PH,c(`pH Min`,`pH Max`), left.open= TRUE))%>% # Identify where pH outside of assessment range
     ungroup()%>%
     mutate(exceeds=ifelse(interval == 1, F, T)) # Highlight where pH doesn't fall into assessment range
   quickStats(pH, 'PH')
@@ -1009,7 +1011,10 @@ collapseAllDataByLevel <- function(x, colNumbers){
 
 # consolidate lake counts
 lakeConsolidation <- function(x){
-  parameterName <- strsplit(names(x)[1], '_')[[1]][1]                
+  parameterName <- strsplit(names(x)[1], '_')[[1]][1]  
+  if(parameterName == 'NUT'){
+    parameterName <- strsplit(names(x)[1], '_')[[1]][2] 
+  }
   ratio <- paste(x[,1],'/',x[,2], sep='')
   return( paste(parameterName, ': ', ratio, sep='' ))
   
