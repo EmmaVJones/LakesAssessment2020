@@ -30,8 +30,13 @@ lakeAU <- st_read('GIS/draft2018IR_AUs/va_2018_aus_reservoir.shp')
 
 # Roger's conventionals data pull
 #conventionals <- read_csv('data/final2020data/CEDSWQM_2020_IR_DATA-CONVENTIONALS_20190305.csv') %>%
-conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency.csv') %>%
-  filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
+#conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency.csv') %>%
+conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency_TP_ECOLIupdates.csv',
+                          col_types = list(`PHOSPHORUS_mg/L` = col_double(), 
+                                           `RMK_PHOSPHORUS` = col_character(),
+                                           `ECOLI_CFU/100mL` = col_double(), 
+                                           `ECOLI_RMK` = col_character() )) %>%
+ filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
   rename("FDT_TEMP_CELCIUS"  ="TEMPERATURE_00010_DEGREES CENTIGRADE",
          "FDT_TEMP_CELCIUS_RMK" = "FDT_TEMP_CELCIUS_RMK",  
          "FDT_FIELD_PH" = "pH_00400_STD_UNITS" ,          

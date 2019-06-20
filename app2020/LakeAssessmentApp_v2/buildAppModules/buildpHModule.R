@@ -1,4 +1,9 @@
-lake_filter <- filter(lakeStations, SIGLAKENAME == 'Leesville Reservoir')
+source('startupServer.R')
+
+lakeStations <- read_csv('processedStationData/final2020data/lakeStations2020_BRRO_citmonNonAgency.csv')
+
+
+lake_filter <- filter(lakeStations, SIGLAKENAME == "Lake Gaston, (Virginia portion)")#'Leesville Reservoir')
 
 
 conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$FDT_STA_ID)) %>%
@@ -8,10 +13,10 @@ conventionals_Lake <- filter(conventionals, FDT_STA_ID %in% unique(lake_filter$F
 
 
 
-AUData <- filter(conventionals_Lake, ID305B_1 %in% "VAW-L13L_ROA01A18") %>% 
+AUData <- filter(conventionals_Lake, ID305B_1 %in% c('VAW-L79L_ROA07A98','VAW-L80L_ROA08A04')) %>% #"VAW-L13L_ROA01A18") %>% 
   left_join(WQSvalues, by = 'CLASS') 
 
-stationData <- filter(AUData, FDT_STA_ID %in% "LVLAROA140.66") #"9-NEW087.14" "9-NEW089.34"
+#stationData <- filter(AUData, FDT_STA_ID %in% "LVLAROA140.66") #"9-NEW087.14" "9-NEW089.34"
 
 
 
@@ -172,7 +177,7 @@ server <- function(input,output,session){
     filter(AUData, FDT_STA_ID %in% input$stationSelection) })
   stationSelected <- reactive({input$stationSelection})
   
-  AUData <- reactive({filter(conventionals_Lake, ID305B_1 %in% "VAW-L13L_ROA01A18") %>% 
+  AUData <- reactive({filter(conventionals_Lake, ID305B_1 %in% c('VAW-L79L_ROA07A98','VAW-L80L_ROA08A04')) %>% #"VAW-L13L_ROA01A18") %>% 
       left_join(WQSvalues, by = 'CLASS') })
   
   # Create Data frame with all data within ID305B and stratification information

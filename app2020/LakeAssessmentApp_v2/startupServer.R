@@ -3,7 +3,15 @@ source('global.R')
 
 # Draft 2020 data
 #conventionals <- read_csv('data/final2020data/CEDSWQM_2020_IR_DATA-CONVENTIONALS_20190305.csv') %>%
-conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency.csv') %>%
+#conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency.csv') %>%
+
+# I specified column classes this time because weird issues with data missing in fields changed (TP and eColi) happened when 
+# saving as .csv and reading in using read_csv, fields turned to logical and data into NA
+conventionals <- read_csv('data/final2020data/conventionals_final2020_citmonNonAgency_TP_ECOLIupdates.csv',
+                          col_types = list(`PHOSPHORUS_mg/L` = col_double(), 
+                                           `RMK_PHOSPHORUS` = col_character(),
+                                           `ECOLI_CFU/100mL` = col_double(), 
+                                           `ECOLI_RMK` = col_character() )) %>%
   filter(!is.na(Latitude)|!is.na(Longitude)) %>% # remove sites without coordinates
   rename("FDT_TEMP_CELCIUS"  ="TEMPERATURE_00010_DEGREES CENTIGRADE",
          "FDT_TEMP_CELCIUS_RMK" = "FDT_TEMP_CELCIUS_RMK",  

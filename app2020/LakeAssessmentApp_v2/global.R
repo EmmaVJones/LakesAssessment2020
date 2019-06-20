@@ -542,9 +542,9 @@ pHExceedances <- function(x){
   pH <- dplyr::select(x,FDT_DATE_TIME,FDT_FIELD_PH,`pH Min`,`pH Max`, LakeStratification)%>% # Just get relevant columns, 
     filter(!is.na(FDT_FIELD_PH))%>% #get rid of NA's
     filter(LakeStratification %in% c("Epilimnion",NA)) %>%
-    rowwise() %>% mutate(interval=findInterval(FDT_FIELD_PH,c(`pH Min`,`pH Max`), left.open= TRUE))%>% # Identify where pH outside of assessment range
-    ungroup()%>%
-    mutate(exceeds=ifelse(interval == 1, F, T)) # Highlight where pH doesn't fall into assessment range
+    rowwise() %>%
+    mutate(exceeds=ifelse(FDT_FIELD_PH < `pH Min` | FDT_FIELD_PH > `pH Max`,TRUE, FALSE))# Identify where pH outside of assessment range
+    
   quickStats(pH, 'PH')
 }
 #pHExceedances(x)

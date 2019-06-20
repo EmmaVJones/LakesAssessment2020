@@ -9,6 +9,11 @@ library(sf)
 lakeStations2020 <- read_csv('processedStationData/final2020data/RegionalResultsLake_BRROCitMonNonAgencyFINAL.csv') %>%
   mutate(ID305B = ID305B_1) # make joining column
 
+# Fix 4AROA158.22 and 4AROA163.76 in A18 AU when it should not be in a new AU from 2018 IR effort
+lakeStations2020 <- mutate(lakeStations2020, ID305B_1 = 
+                             ifelse(STATION_ID %in% c('4AROA158.22','4AROA163.76'), 
+                                    'VAW-L12L_ROA01A02' , ID305B_1))
+
 
 # BRRO old data, for double checking
 lakeStationsFinal <- readRDS('data/lakeStationsFinal.RDS') 
